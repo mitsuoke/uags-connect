@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>UAGS — проекты</title>
+  <link rel="stylesheet" href="./portal.css">
+  <script type="module" src="./portal.mjs"></script>
+</head>
+<body>
+<header><a href="./" aria-label="UAGS, начало">UAGS<span> / проекты</span></a><span class="tag">Подключение сайта · первый этап</span></header>
+<main>
+  <section class="intro">
+    <p class="eyebrow">Существующий Engine. Ещё один проект.</p>
+    <h1>Подготовьте сайт к исследованию</h1>
+    <p class="lead">Когда сайт другого бизнеса будет готов, укажите его адрес и вопрос, который хотите улучшить. Система создаст отдельный профиль и план исследования.</p>
+    <p>Настройки сохраняются только в этом браузере. Ключи, пароли и данные клиентов здесь не нужны. Само исследование выполняется в рабочем контуре Engine после импорта профиля.</p>
+  </section>
+  <div class="layout">
+    <section aria-labelledby="new-title" class="card">
+      <h2 id="new-title">Добавить проект</h2>
+      <form id="project-form">
+        <label for="project-key">Короткое имя проекта</label>
+        <input id="project-key" name="projectKey" required minlength="2" maxlength="48" pattern="[a-z][a-z0-9-]{1,47}" placeholder="my-company" autocomplete="off" aria-describedby="key-help">
+        <small id="key-help">Латинские буквы, цифры и дефис. У каждого проекта своё имя.</small>
+        <label for="site-url">Публичный адрес сайта</label>
+        <input id="site-url" name="publicSiteUrl" type="url" required maxlength="2048" placeholder="https://example.com/" autocomplete="off">
+        <label for="repository">Репозиторий GitHub <span class="muted">· необязательно</span></label>
+        <input id="repository" name="repository" maxlength="140" placeholder="owner/site" autocomplete="off">
+        <small>Только привязка адреса. Доступ к GitHub и публикация этим не разрешаются.</small>
+        <label for="category">Чем занимается сайт</label>
+        <input id="category" name="publicCategory" required minlength="2" maxlength="160" placeholder="Например, ремонт бытовой техники" autocomplete="off">
+        <label for="problem">Какой вопрос исследовать</label>
+        <input id="problem" name="publicProblem" required minlength="2" maxlength="160" placeholder="Например, понятность следующего шага после заявки" autocomplete="off">
+        <label for="language">Язык поиска</label>
+        <select id="language" name="language"><option value="ru">Русский</option><option value="en">English</option></select>
+        <button type="submit">Сохранить профиль</button>
+      </form>
+      <p id="message" role="status" aria-live="polite"></p>
+      <label class="import-label" for="import-file">Или открыть ранее сохранённый профиль</label>
+      <input id="import-file" type="file" accept="application/json,.json">
+    </section>
+    <section aria-labelledby="projects-title">
+      <h2 id="projects-title">Мои проекты</h2>
+      <p id="empty">Пока нет сохранённых профилей. Сначала создадим сайт другого бизнеса, затем подключим его здесь к тому же Engine.</p>
+      <div id="projects"></div>
+      <div class="card note">
+        <h3>Что происходит дальше</h3>
+        <ol><li>После создания сайта сохраните его настройки и план в файл.</li><li>Подключите их к существующему Engine по инструкции репозитория.</li><li>Исследование сохраняется отдельно. Аналитика и CRM подключаются позже при необходимости.</li></ol>
+        <p>Сохранённый профиль ещё не подтверждает доступность сайта или права на него. Автоматическое изменение и публикация здесь отключены. Эта страница не является защищённым кабинетом для закрытых данных.</p>
+      </div>
+    </section>
+  </div>
+  <noscript>Для подготовки профиля нужен JavaScript. В Engine доступен тот же формат подключения через файл.</noscript>
+</main>
+<footer>UAGS · Публичное исследование → проверяемое предложение → отдельное решение о публикации</footer>
+</body>
+</html>
