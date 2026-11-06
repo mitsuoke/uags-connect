@@ -61,10 +61,18 @@
           <label for="outcome">Какой результат важен бизнесу <span class="muted">· необязательно</span></label>
           <input id="outcome" name="desiredOutcome" minlength="2" maxlength="160" placeholder="Например, оплаченный заказ или состоявшееся проживание" autocomplete="off">
           <small>Это заявленная цель для исследования. Продажи и эффект проверяются отдельно.</small>
+          <details class="import-row"><summary>Дополнительно для проекта</summary>
+            <label for="project-key">Короткое имя проекта <span class="muted">· необязательно</span></label>
+            <input id="project-key" name="projectKey" minlength="2" maxlength="48" pattern="[a-z][a-z0-9-]{1,47}" placeholder="my-company" autocomplete="off">
+            <small>Латинские строчные буквы, цифры и дефис. Если оставить пустым, имя создастся из адреса сайта.</small>
+            <label for="repository">Публичный GitHub-репозиторий <span class="muted">· необязательно</span></label>
+            <input id="repository" name="repository" maxlength="140" placeholder="owner/site" autocomplete="off">
+            <small>Только подсказка для публичного исследования. Указание репозитория не подтверждает владение сайтом и не даёт права на правки.</small>
+          </details>
           <label for="language">Язык поиска</label>
           <select id="language" name="language"><option value="ru">Русский</option><option value="en">English</option></select>
           <button type="submit">Показать план и передать заявку <span aria-hidden="true">↗</span></button>
-          <small>Публичный адрес и описание задачи будут отправлены UAGS. Не вводите пароли, контакты клиентов и закрытые сведения. Исследование начнётся после отдельной проверки заявки.</small>
+          <small>Публичный адрес, описание задачи и заполненные дополнительные поля будут отправлены UAGS. Не вводите пароли, контакты клиентов и закрытые сведения. Исследование начнётся после отдельной проверки заявки.</small>
         </form>
         <p id="message" role="status" aria-live="polite"></p>
         <details class="import-row"><summary>Дополнительно</summary><p>Если вы уже сохраняли профиль в этом браузере, он появится справа. Можно также открыть ранее сохранённую копию.</p><label class="import-label" for="import-file">Открыть копию профиля</label><input id="import-file" type="file" accept="application/json,.json"></details>
