@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 264 64" role="img" aria-labelledby="title">
+<title id="title">UAGS</title>
+<rect width="64" height="64" rx="15" fill="#152c42"/>
+<path d="M15,17v18c0,11,7,18,17,18s17-7,17-18V17" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+<circle cx="49" cy="14" r="5" fill="#7bd9b1"/>
+<g fill="none" stroke="#152c42" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+<path d="M83,16v25c0,10,5,16,15,16s15-6,15-16V16"/>
+<path d="M122,56l17-40,17,40M128,43h22"/>
+<path d="M192,23c-4-5-9-7-16-7-12,0-19,9-19,21s7,20,19,20c7,0,12-2,16-6V38h-15"/>
+<path d="M232,21c-5-4-10-5-16-5-8,0-14,4-14,11,0,6,4,9,14,11,10,2,15,5,15,10,0,6-6,9-15,9-7,0-13-2-18-7"/>
+</g>
+</svg>
