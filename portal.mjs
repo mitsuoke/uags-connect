@@ -70,6 +70,7 @@ document.querySelector('#project-form').addEventListener('submit', event => {
     const fields = Object.fromEntries(new FormData(event.currentTarget));
     fields.repository = null;
     fields.projectKey = nextProjectKey(fields.publicSiteUrl);
+    if (!fields.desiredOutcome.trim()) delete fields.desiredOutcome;
     add(createPublicResearchProject(fields));
   } catch (error) { notify('Проверьте настройки. ' + error.message); }
 });
