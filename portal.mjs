@@ -1,12 +1,42 @@
 import { createPublicResearchProject, parsePublicResearchProject, planPublicResearchProject } from './engine/src/growth/generic-project-connection.js';
 
 const storageKey = 'uags.public-projects.v1';
+const receiptKey = 'uags.public-project-receipts.v1';
+const intakeUrl = 'https://uags-public-intake.fgn-9c244031b99b.workers.dev/v1/public-projects';
 const projects = new Map();
+const receipts = new Map();
+const sending = new Set();
 const message = document.querySelector('#message');
 function notify(text) { message.textContent = text; }
 function save() {
   try { localStorage.setItem(storageKey, JSON.stringify([...projects.values()])); return true; }
   catch { notify('План показан, но браузер не сохранил его для следующего посещения.'); return false; }
+}
+function saveReceipts() {
+  try { localStorage.setItem(receiptKey, JSON.stringify([...receipts])); }
+  catch { notify('Заявка получена, но браузер не сохранил номер для следующего посещения.'); }
+}
+async function send(project) {
+  const id = project.profile.projectId;
+  if (sending.has(id) || receipts.has(id)) return;
+  sending.add(id); render();
+  notify('План показан. Передаём публичную заявку UAGS…');
+  try {
+    const response = await fetch(intakeUrl, {
+      method: 'POST', mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer',
+      cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectKey: project.projectKey, publicSiteUrl: project.publicSiteUrl,
+        repository: null, publicCategory: project.publicCategory,
+        publicProblem: project.publicProblem, language: project.language })
+    });
+    if (response.status !== 202) throw new Error('Request rejected');
+    const receipt = await response.json();
+    if (receipt?.status !== 'RECEIVED' || receipt.researchStarted !== false
+      || !/^[0-9a-f-]{36}$/i.test(receipt.requestId ?? '')) throw new Error('Invalid receipt');
+    receipts.set(id, receipt.requestId); saveReceipts();
+    notify(`Заявка получена: ${receipt.requestId}. Исследование ещё не начато.`);
+  } catch { notify('План сохранён здесь, но заявка не передана. Повторите отправку на карточке сайта.'); }
+  finally { sending.delete(id); render(); }
 }
 function download(name, data) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' }));
@@ -36,9 +66,13 @@ function render() {
   for (const project of projects.values()) {
     const card = node('article', '', 'card project-card');
     card.append(node('h3', new URL(project.publicSiteUrl).hostname), node('p', project.publicSiteUrl, 'project-url'),
-      node('p', 'План готов · исследование ещё не запущено', 'project-status'),
+      node('p', receipts.has(project.profile.projectId)
+        ? 'Заявка получена · исследование ещё не начато'
+        : sending.has(project.profile.projectId) ? 'Передаём заявку…' : 'План готов · заявка не передана', 'project-status'),
       node('p', project.publicProblem));
-    if (project.desiredOutcome) card.append(node('p', `Заявленная цель: ${project.desiredOutcome}`));
+    if (!receipts.has(project.profile.projectId) && !sending.has(project.profile.projectId)) {
+      card.append(button('Передать заявку UAGS', () => send(project)));
+    }
     const plan = planPublicResearchProject(project, 'initial');
     const details = document.createElement('details'); details.open = true;
     details.append(node('summary', 'Первые вопросы для исследования'));
@@ -50,7 +84,8 @@ function render() {
       button('Сохранить копию плана', () => download(`${project.projectKey}.plan.json`, plan)));
     card.append(extra);
     card.append(button('Удалить этот план', () => {
-      projects.delete(project.profile.projectId); save(); render();
+      projects.delete(project.profile.projectId); receipts.delete(project.profile.projectId);
+      save(); saveReceipts(); render();
     }, 'danger'));
     container.append(card);
   }
@@ -64,14 +99,15 @@ function add(project) {
   if (save()) notify('План готов и сохранён в этом браузере.');
   render();
 }
-document.querySelector('#project-form').addEventListener('submit', event => {
+document.querySelector('#project-form').addEventListener('submit', async event => {
   event.preventDefault();
   try {
     const fields = Object.fromEntries(new FormData(event.currentTarget));
     fields.repository = null;
     fields.projectKey = nextProjectKey(fields.publicSiteUrl);
-    if (!fields.desiredOutcome.trim()) delete fields.desiredOutcome;
-    add(createPublicResearchProject(fields));
+    const project = createPublicResearchProject(fields);
+    add(project);
+    await send(project);
   } catch (error) { notify('Проверьте настройки. ' + error.message); }
 });
 document.querySelector('#import-file').addEventListener('change', async event => {
@@ -94,4 +130,15 @@ try {
     projects.set(project.profile.projectId, project);
   }
 } catch { projects.clear(); notify('Сохранённые планы не удалось прочитать. Создайте план снова.'); }
+try {
+  const raw = localStorage.getItem(receiptKey);
+  if (raw && raw.length > 2048) throw new Error('Storage limit');
+  const saved = raw ? JSON.parse(raw) : [];
+  if (!Array.isArray(saved) || saved.length > 10) throw new Error('Storage format');
+  for (const row of saved) {
+    if (!Array.isArray(row) || row.length !== 2 || !projects.has(row[0])
+      || typeof row[1] !== 'string' || !/^[0-9a-f-]{36}$/i.test(row[1])) throw new Error('Receipt format');
+    receipts.set(row[0], row[1]);
+  }
+} catch { receipts.clear(); }
 render();
