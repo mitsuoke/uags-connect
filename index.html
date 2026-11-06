@@ -58,6 +58,9 @@
           <input id="category" name="publicCategory" required minlength="2" maxlength="160" placeholder="Например, ремонт бытовой техники" autocomplete="off">
           <label for="problem">Какой вопрос исследовать</label>
           <input id="problem" name="publicProblem" required minlength="2" maxlength="160" placeholder="Например, понятность следующего шага после заявки" autocomplete="off">
+          <label for="outcome">Какой результат важен бизнесу <span class="muted">· необязательно</span></label>
+          <input id="outcome" name="desiredOutcome" minlength="2" maxlength="160" placeholder="Например, оплаченный заказ или состоявшееся проживание" autocomplete="off">
+          <small>Это заявленная цель для исследования. Продажи и эффект проверяются отдельно.</small>
           <label for="language">Язык поиска</label>
           <select id="language" name="language"><option value="ru">Русский</option><option value="en">English</option></select>
           <button type="submit">Показать план и передать заявку <span aria-hidden="true">↗</span></button>
