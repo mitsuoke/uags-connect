@@ -26,8 +26,10 @@ async function send(project) {
       method: 'POST', mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer',
       cache: 'no-store', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectKey: project.projectKey, publicSiteUrl: project.publicSiteUrl,
-        repository: null, publicCategory: project.publicCategory,
-        publicProblem: project.publicProblem, language: project.language })
+        repository: project.repository, publicCategory: project.publicCategory,
+        publicProblem: project.publicProblem,
+        ...(project.desiredOutcome ? { desiredOutcome: project.desiredOutcome } : {}),
+        language: project.language })
     });
     if (response.status !== 202) throw new Error('Request rejected');
     const receipt = await response.json();
@@ -70,6 +72,8 @@ function render() {
         ? 'Заявка получена · исследование ещё не начато'
         : sending.has(project.profile.projectId) ? 'Передаём заявку…' : 'План готов · заявка не передана', 'project-status'),
       node('p', project.publicProblem));
+    if (project.desiredOutcome) card.append(node('p', `Заявленная цель: ${project.desiredOutcome}`));
+    if (project.repository) card.append(node('p', `Публичный репозиторий (не проверен): ${project.repository}`));
     if (!receipts.has(project.profile.projectId) && !sending.has(project.profile.projectId)) {
       card.append(button('Передать заявку UAGS', () => send(project)));
     }
@@ -80,6 +84,7 @@ function render() {
     for (const query of plan.queries) list.append(node('li', query.text));
     details.append(list); card.append(details);
     const extra = document.createElement('details'); extra.append(node('summary', 'Дополнительно'));
+    extra.append(node('p', `Короткое имя проекта: ${project.projectKey}`));
     extra.append(button('Сохранить копию настроек', () => download(`${project.projectKey}.project.json`, project)),
       button('Сохранить копию плана', () => download(`${project.projectKey}.plan.json`, plan)));
     card.append(extra);
@@ -91,6 +96,9 @@ function render() {
   }
 }
 function add(project) {
+  if (projects.has(project.profile.projectId)) {
+    throw new Error('Короткое имя проекта уже используется в этом браузере.');
+  }
   if ([...projects.values()].some(saved => saved.publicSiteUrl === project.publicSiteUrl)) {
     throw new Error('План для этого сайта уже показан справа.');
   }
@@ -103,8 +111,9 @@ document.querySelector('#project-form').addEventListener('submit', async event =
   event.preventDefault();
   try {
     const fields = Object.fromEntries(new FormData(event.currentTarget));
-    fields.repository = null;
-    fields.projectKey = nextProjectKey(fields.publicSiteUrl);
+    fields.repository = fields.repository.trim() || null;
+    fields.projectKey = fields.projectKey.trim() || nextProjectKey(fields.publicSiteUrl);
+    if (!fields.desiredOutcome.trim()) delete fields.desiredOutcome;
     const project = createPublicResearchProject(fields);
     add(project);
     await send(project);

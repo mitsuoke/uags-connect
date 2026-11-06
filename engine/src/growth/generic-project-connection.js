@@ -11,7 +11,9 @@ function exact(input, keys) {
     return row;
 }
 export function createPublicResearchProject(input) {
-    const row = exact(input, FIELDS);
+    const supplied = asPlainDataRecord(input, 'PublicResearchProject');
+    const hasDesiredOutcome = Object.hasOwn(supplied, 'desiredOutcome');
+    const row = exact(input, hasDesiredOutcome ? [...FIELDS, 'desiredOutcome'] : FIELDS);
     const key = row.projectKey;
     if (typeof key !== 'string' || !/^[a-z][a-z0-9-]{1,47}$/.test(key)) {
         throw new Error('Project key must contain 2–48 lowercase letters, digits or hyphens.');
@@ -30,17 +32,26 @@ export function createPublicResearchProject(input) {
     const propertyId = `property:${key}:public-site`;
     const connectionId = `connection:${key}:public-web`;
     const capabilityId = `capability:${key}:public-research`;
+    const desiredOutcome = hasDesiredOutcome ? row.desiredOutcome : undefined;
+    if (desiredOutcome !== undefined && (typeof desiredOutcome !== 'string'
+        || desiredOutcome.trim().length < 2 || desiredOutcome.length > 160
+        || !/^[\p{L}\p{N} ,()\-]+$/u.test(desiredOutcome))) {
+        throw new Error('Expected a bounded public business outcome description.');
+    }
+    const declaredOutcome = desiredOutcome === undefined ? undefined : desiredOutcome.trim().replace(/ +/gu, ' ');
+    const outcomeRef = declaredOutcome ? `outcome:${key}:declared` : 'outcome:website-enquiry';
+    const targetMetric = declaredOutcome ? `metric:${key}:declared-outcome-unverified` : 'website_enquiry_rate';
     // Validate reviewed phrases and reuse the existing planner, rather than a second query model.
     const cycle = buildDynamicResearchQueryPlan({
         cycleId: `research:${key}:initial`, marketRef: `market:${key}`,
-        targetMetric: 'website_enquiry_rate', internalEvidenceRefs: [],
+        targetMetric, internalEvidenceRefs: [],
         publicCategory: row.publicCategory, publicProblem: row.publicProblem, language: row.language,
         maximumQueries: 8, maximumCandidates: 50, maximumPages: 15
     }, { vocabulary: 'GENERAL' }).cycle;
     const profile = parseProjectProfile({
         schemaVersion: '1.0.0', projectId: `project:${key}:v1`, businessId,
         businessProfile: { businessId, businessTypeRef: 'business-type:website',
-            outcomeRefs: ['outcome:website-enquiry'], primaryOutcomeRef: 'outcome:website-enquiry',
+            outcomeRefs: [outcomeRef], primaryOutcomeRef: outcomeRef,
             businessValueFlowRef: `value-flow:${key}:unmapped` },
         properties: [{ propertyId, businessId, propertyTypeRef: 'property-type:website',
                 canonicalRef: `web:${site.hostname}${url.pathname}` }],
@@ -54,16 +65,22 @@ export function createPublicResearchProject(input) {
     });
     return Object.freeze({ schemaVersion: '1.0.0', projectKey: key, publicSiteUrl: url.href,
         repository, publicCategory: cycle.publicCategory, publicProblem: cycle.publicProblem,
+        ...(declaredOutcome ? { desiredOutcome: declaredOutcome } : {}),
         language: cycle.language, profile });
 }
 export function parsePublicResearchProject(input) {
-    const row = exact(input, ['schemaVersion', ...FIELDS, 'profile']);
+    const supplied = asPlainDataRecord(input, 'PublicResearchProject');
+    const hasDesiredOutcome = Object.hasOwn(supplied, 'desiredOutcome');
+    const row = exact(input, ['schemaVersion', ...FIELDS,
+        ...(hasDesiredOutcome ? ['desiredOutcome'] : []), 'profile']);
     if (row.schemaVersion !== '1.0.0')
         throw new Error('Unsupported project version.');
-    const parsed = createPublicResearchProject(Object.fromEntries(FIELDS.map(key => [key, row[key]])));
-    const supplied = parseProjectProfile(row.profile);
+    const parsed = createPublicResearchProject(Object.fromEntries([
+        ...FIELDS, ...(hasDesiredOutcome ? ['desiredOutcome'] : [])
+    ].map(key => [key, row[key]])));
+    const suppliedProfile = parseProjectProfile(row.profile);
     // Compare parsed, ordered fields: JSON key order in an uploaded file is irrelevant.
-    if (JSON.stringify(supplied) !== JSON.stringify(parsed.profile)) {
+    if (JSON.stringify(suppliedProfile) !== JSON.stringify(parsed.profile)) {
         throw new Error('Project profile does not match its public settings or attempts to add capabilities.');
     }
     return parsed;
@@ -74,7 +91,9 @@ export function planPublicResearchProject(project, cycleLabel) {
         throw new Error('Invalid research cycle label.');
     return buildDynamicResearchQueryPlan({
         cycleId: `research:${parsed.projectKey}:${cycleLabel}`, marketRef: `market:${parsed.projectKey}`,
-        targetMetric: 'website_enquiry_rate', internalEvidenceRefs: [],
+        targetMetric: parsed.desiredOutcome
+            ? `metric:${parsed.projectKey}:declared-outcome-unverified` : 'website_enquiry_rate',
+        internalEvidenceRefs: [],
         publicCategory: parsed.publicCategory, publicProblem: parsed.publicProblem, language: parsed.language,
         maximumQueries: 8, maximumCandidates: 50, maximumPages: 15
     }, { vocabulary: 'GENERAL' });
