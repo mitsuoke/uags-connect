@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="UAGS — Universal Autonomous Growth System. Публичное исследование сайтов, проверяемые предложения и контролируемые изменения. Начните с профиля вашего проекта.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://uags-public-intake.fgn-9c244031b99b.workers.dev; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#ffffff">
   <title>UAGS — Universal Autonomous Growth System</title>
@@ -45,7 +45,7 @@
       <article><span class="step-number">03 / ПРОВЕРИТЬ</span><h3>Эффект и откат</h3><p>Публикация проходит отдельное решение и проверки. Изменение можно вернуть, а эффект оценивается только по доступным достоверным данным.</p></article>
     </div>
   </section>
-  <section class="process-shell" id="process" aria-labelledby="process-title"><div class="section-wrap process-layout"><div><p class="eyebrow">02 / Как работает</p><h2 id="process-title">От вопроса<br>к проверяемой<br>правке.</h2><p class="process-intro">Для первого шага достаточно публичного адреса сайта и задачи бизнеса.</p><a class="text-link light-link" href="#connect">Перейти к проекту <span aria-hidden="true">↗</span></a></div><ol class="process-list"><li><span>01</span><div><h3>Расскажите о сайте</h3><p>Укажите адрес и вопрос, который важно решить. Доступы и CRM для этого не нужны.</p></div></li><li><span>02</span><div><h3>Посмотрите план</h3><p>Страница сразу покажет вопросы для исследования. Настройки останутся в этом браузере.</p></div></li><li><span>03</span><div><h3>Проверьте предложение</h3><p>Исследование и возможная правка проходят отдельную проверку. Ничего на вашем сайте не меняется автоматически.</p></div></li></ol></div></section>
+  <section class="process-shell" id="process" aria-labelledby="process-title"><div class="section-wrap process-layout"><div><p class="eyebrow">02 / Как работает</p><h2 id="process-title">От вопроса<br>к проверяемой<br>правке.</h2><p class="process-intro">Для первого шага достаточно публичного адреса сайта и задачи бизнеса.</p><a class="text-link light-link" href="#connect">Перейти к проекту <span aria-hidden="true">↗</span></a></div><ol class="process-list"><li><span>01</span><div><h3>Расскажите о сайте</h3><p>Укажите адрес и вопрос, который важно решить. Доступы и CRM для этого не нужны.</p></div></li><li><span>02</span><div><h3>Посмотрите план</h3><p>Страница сразу покажет вопросы для исследования и передаст публичную заявку UAGS.</p></div></li><li><span>03</span><div><h3>Проверьте предложение</h3><p>Исследование и возможная правка проходят отдельную проверку. Ничего на вашем сайте не меняется автоматически.</p></div></li></ol></div></section>
   <section class="connect section-wrap" id="connect" aria-labelledby="connect-title">
     <div class="section-heading connect-heading"><p class="eyebrow">03 / Первый шаг</p><h2 id="connect-title">Начните с вашего сайта.</h2><p>Укажите адрес и задачу. План появится здесь сразу.</p></div>
     <div class="layout">
@@ -58,12 +58,10 @@
           <input id="category" name="publicCategory" required minlength="2" maxlength="160" placeholder="Например, ремонт бытовой техники" autocomplete="off">
           <label for="problem">Какой вопрос исследовать</label>
           <input id="problem" name="publicProblem" required minlength="2" maxlength="160" placeholder="Например, понятность следующего шага после заявки" autocomplete="off">
-          <label for="outcome">Какой результат важен бизнесу <span class="muted">· необязательно</span></label>
-          <input id="outcome" name="desiredOutcome" minlength="2" maxlength="160" placeholder="Например, оплаченный заказ или состоявшееся проживание" autocomplete="off">
-          <small>Если пока не знаете, оставьте поле пустым. Продажи и эффект проверяются отдельно.</small>
           <label for="language">Язык поиска</label>
           <select id="language" name="language"><option value="ru">Русский</option><option value="en">English</option></select>
-          <button type="submit">Показать план <span aria-hidden="true">↗</span></button>
+          <button type="submit">Показать план и передать заявку <span aria-hidden="true">↗</span></button>
+          <small>Публичный адрес и описание задачи будут отправлены UAGS. Не вводите пароли, контакты клиентов и закрытые сведения. Исследование начнётся после отдельной проверки заявки.</small>
         </form>
         <p id="message" role="status" aria-live="polite"></p>
         <details class="import-row"><summary>Дополнительно</summary><p>Если вы уже сохраняли профиль в этом браузере, он появится справа. Можно также открыть ранее сохранённую копию.</p><label class="import-label" for="import-file">Открыть копию профиля</label><input id="import-file" type="file" accept="application/json,.json"></details>
@@ -72,7 +70,7 @@
         <div class="card-heading"><span class="card-index">02 / ПЛАН</span><h3 id="projects-title">Ваше исследование</h3></div>
         <p id="empty">Добавьте сайт слева — здесь появится план первых вопросов.</p>
         <div id="projects"></div>
-        <div class="card note"><h3>После этого шага</h3><p>План сохранится в вашем браузере. Исследование пока не запускается автоматически. Для доступа к аналитике и изменений сайта понадобится отдельное подключение.</p></div>
+        <div class="card note"><h3>После этого шага</h3><p>План сохранится в браузере, а публичная заявка поступит UAGS. Получение заявки не означает начало исследования. Для доступа к аналитике и изменений сайта понадобится отдельное подключение.</p></div>
       </section>
     </div>
     <noscript>Для подготовки плана включите JavaScript.</noscript>
