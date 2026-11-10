@@ -2,11 +2,13 @@ import { createPublicResearchProject, parsePublicResearchProject, planPublicRese
 
 const storageKey = 'uags.public-projects.v1';
 const receiptKey = 'uags.public-project-receipts.v1';
+const pendingKeyPrefix = 'uags.public-project-pending.v1.';
 const local = ['127.0.0.1', 'localhost'].includes(location.hostname)
   && document.querySelector('meta[name="uags-paid-test"]')?.content === '1';
 const intakeUrl = local ? '/v1/public-projects' : 'https://uags-public-intake.fgn-9c244031b99b.workers.dev/v1/public-projects';
 const projects = new Map();
 const receipts = new Map();
+const pendingKeys = new Map();
 const sending = new Set();
 const paidStates = new Map();
 const paidBusy = new Set();
@@ -23,6 +25,20 @@ function saveReceipts() {
   try { localStorage.setItem(receiptKey, JSON.stringify([...receipts])); }
   catch { notify('Заявка получена, но браузер не сохранил номер для следующего посещения.'); }
 }
+function requestKey(id) {
+  if (pendingKeys.has(id)) return pendingKeys.get(id);
+  try {
+    const saved = localStorage.getItem(pendingKeyPrefix + id);
+    if (/^[a-f0-9]{64}$/u.test(saved ?? '')) {
+      pendingKeys.set(id, saved);
+      return saved;
+    }
+  } catch { /* The retry can still use its in-memory receipt. */ }
+  const key = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
+  pendingKeys.set(id, key);
+  try { localStorage.setItem(pendingKeyPrefix + id, key); } catch { /* Restricted storage. */ }
+  return key;
+}
 async function send(project) {
   const id = project.profile.projectId;
   if (sending.has(id) || receipts.has(id)) return;
@@ -31,13 +47,17 @@ async function send(project) {
   try {
     const response = await fetch(intakeUrl, {
       method: 'POST', mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer',
-      cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-UAGS-Request-Key': requestKey(id) },
       body: JSON.stringify({ projectKey: project.projectKey, publicSiteUrl: project.publicSiteUrl,
         repository: project.repository, publicCategory: project.publicCategory,
         publicProblem: project.publicProblem,
         ...(project.desiredOutcome ? { desiredOutcome: project.desiredOutcome } : {}),
         language: project.language })
     });
+    if (response.status === 429) {
+      notify('Лимит заявок на сегодня достигнут. План сохранён, повторите отправку позже.');
+      return;
+    }
     if (response.status !== 202) throw new Error('Request rejected');
     const receipt = await response.json();
     if (receipt?.status !== 'RECEIVED' || receipt.researchStarted !== false
@@ -112,8 +132,9 @@ function renderPaid(card, id) {
       if (state.preview.report.capturedAt) card.append(node('p', `Проверено: ${new Date(state.preview.report.capturedAt).toLocaleString('ru')}`));
     } else if (state.preview.state === 'LIMITED') card.append(node('p', 'Бесплатная выжимка недоступна для этой заявки.'));
   }
-  card.append(node('p', paidLabels[state.state], 'paid-report-status'));
-  if (state.state === 'PAYMENT_PENDING' && state.offer) {
+  const checkoutPaused = state.state === 'PAYMENT_PENDING' && state.checkoutAvailable === false;
+  card.append(node('p', checkoutPaused ? 'Оплата пока недоступна.' : paidLabels[state.state], 'paid-report-status'));
+  if (state.state === 'PAYMENT_PENDING' && !checkoutPaused && state.offer) {
     const currency = new Intl.NumberFormat('ru', { style: 'currency', currency: state.offer.currency });
     const fractionDigits = currency.resolvedOptions().maximumFractionDigits;
     card.append(node('p', `${state.offer.scopeLabel} · ${currency.format(state.offer.amountMinor / 10 ** fractionDigits)}`),
@@ -122,6 +143,7 @@ function renderPaid(card, id) {
   if (state.state === 'READY' || state.state === 'LIMITED') {
     appendReportSections(card, state.report?.sections ?? []);
   }
+  if (typeof state.remedy === 'string' && state.remedy) card.append(node('p', state.remedy));
 }
 function appendReportSections(card, sections) {
     for (const section of sections) {
@@ -177,6 +199,8 @@ function render() {
     card.append(button('Удалить этот план', () => {
       projects.delete(project.profile.projectId); receipts.delete(project.profile.projectId);
       paidStates.delete(project.profile.projectId);
+      pendingKeys.delete(project.profile.projectId);
+      try { localStorage.removeItem(pendingKeyPrefix + project.profile.projectId); } catch { /* Restricted storage. */ }
       save(); saveReceipts(); render();
     }, 'danger'));
     container.append(card);
