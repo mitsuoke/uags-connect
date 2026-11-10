@@ -54,9 +54,20 @@ async function send(project) {
         ...(project.desiredOutcome ? { desiredOutcome: project.desiredOutcome } : {}),
         language: project.language })
     });
-    if (response.status === 429) {
-      notify('Лимит заявок на сегодня достигнут. План сохранён, повторите отправку позже.');
-      return;
+    if (response.status === 429 || response.status === 503) {
+      const error = (await response.json().catch(() => null))?.error;
+      if (error === 'PREVIEW_PROJECT_LIMIT') {
+        notify('Бесплатная выжимка для этого проекта уже запрошена. Откройте карточку в браузере, из которого отправили заявку.');
+        return;
+      }
+      if (error === 'PREVIEW_PAUSED') {
+        notify('Новые бесплатные выжимки временно приостановлены. План сохранён, а готовые выжимки доступны в карточках проектов.');
+        return;
+      }
+      if (response.status === 429) {
+        notify('Сейчас достигнут лимит заявок. План сохранён, повторите отправку позже.');
+        return;
+      }
     }
     if (response.status !== 202) throw new Error('Request rejected');
     const receipt = await response.json();
@@ -65,7 +76,8 @@ async function send(project) {
     if (receipt.receiptToken !== undefined && !/^[a-f0-9]{64}$/u.test(receipt.receiptToken)) throw new Error('Invalid report receipt');
     receipts.set(id, receipt.receiptToken ? { requestId: receipt.requestId, token: receipt.receiptToken } : receipt.requestId);
     saveReceipts();
-    notify(`Заявка получена: ${receipt.requestId}. Исследование ещё не начато.`);
+    notify(receipt.receiptToken ? `Заявка получена: ${receipt.requestId}. Статус доступен в карточке проекта.`
+      : `Заявка получена: ${receipt.requestId}. Исследование ещё не начато.`);
     if (receipt.receiptToken) await updatePaid(id);
   } catch { notify('План сохранён здесь, но заявка не передана. Повторите отправку на карточке сайта.'); }
   finally { sending.delete(id); render(); }
