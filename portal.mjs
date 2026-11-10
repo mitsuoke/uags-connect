@@ -105,6 +105,13 @@ function renderPaid(card, id) {
       button('Проверить статус отчёта', () => updatePaid(id)));
     return;
   }
+  if (state.preview) {
+    if (['QUEUED', 'RUNNING'].includes(state.preview.state)) card.append(node('p', 'Готовим бесплатную выжимку…'));
+    else if (state.preview.report?.sections?.length) {
+      appendReportSections(card, state.preview.report.sections);
+      if (state.preview.report.capturedAt) card.append(node('p', `Проверено: ${new Date(state.preview.report.capturedAt).toLocaleString('ru')}`));
+    } else if (state.preview.state === 'LIMITED') card.append(node('p', 'Бесплатная выжимка недоступна для этой заявки.'));
+  }
   card.append(node('p', paidLabels[state.state], 'paid-report-status'));
   if (state.state === 'PAYMENT_PENDING' && state.offer) {
     const currency = new Intl.NumberFormat('ru', { style: 'currency', currency: state.offer.currency });
@@ -113,7 +120,11 @@ function renderPaid(card, id) {
       button(local ? 'Перейти к тестовой оплате' : 'Перейти к оплате', () => updatePaid(id, true)));
   }
   if (state.state === 'READY' || state.state === 'LIMITED') {
-    for (const section of state.report?.sections ?? []) {
+    appendReportSections(card, state.report?.sections ?? []);
+  }
+}
+function appendReportSections(card, sections) {
+    for (const section of sections) {
       card.append(node('h4', section.title), node('p', section.text));
       for (const value of section.sourceUrls ?? []) {
         try {
@@ -125,7 +136,6 @@ function renderPaid(card, id) {
         } catch { /* A malformed URL is not a report link. */ }
       }
     }
-  }
 }
 function nextProjectKey(siteUrl) {
   const host = new URL(siteUrl).hostname.replace(/^www\./, '');
@@ -235,7 +245,8 @@ for (const [id, receipt] of receipts) if (typeof receipt !== 'string') void upda
 setInterval(() => {
   if (document.hidden) return;
   for (const [id, state] of paidStates) {
-    if (state.state === 'QUEUED' || state.state === 'RUNNING' || (state.state === 'PAYMENT_PENDING' && state.checkoutStarted)) {
+    if (state.state === 'QUEUED' || state.state === 'RUNNING' || (state.state === 'PAYMENT_PENDING' && state.checkoutStarted)
+      || ['QUEUED', 'RUNNING'].includes(state.preview?.state)) {
       void updatePaid(id);
     }
   }
