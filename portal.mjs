@@ -2,10 +2,17 @@ import { createPublicResearchProject, parsePublicResearchProject, planPublicRese
 
 const storageKey = 'uags.public-projects.v1';
 const receiptKey = 'uags.public-project-receipts.v1';
-const intakeUrl = 'https://uags-public-intake.fgn-9c244031b99b.workers.dev/v1/public-projects';
+const local = ['127.0.0.1', 'localhost'].includes(location.hostname)
+  && document.querySelector('meta[name="uags-paid-test"]')?.content === '1';
+const intakeUrl = local ? '/v1/public-projects' : 'https://uags-public-intake.fgn-9c244031b99b.workers.dev/v1/public-projects';
 const projects = new Map();
 const receipts = new Map();
 const sending = new Set();
+const paidStates = new Map();
+const paidBusy = new Set();
+const paidLabels = { PAYMENT_PENDING: 'Ожидает оплаты', QUEUED: 'Оплата подтверждена · исследование в очереди',
+  RUNNING: 'Исследование выполняется', READY: 'Отчёт готов', LIMITED: 'Отчёт готов частично',
+  FAILED: 'Исследование не завершилось. Повторной оплаты не требуется.' };
 const message = document.querySelector('#message');
 function notify(text) { message.textContent = text; }
 function save() {
@@ -35,8 +42,11 @@ async function send(project) {
     const receipt = await response.json();
     if (receipt?.status !== 'RECEIVED' || receipt.researchStarted !== false
       || !/^[0-9a-f-]{36}$/i.test(receipt.requestId ?? '')) throw new Error('Invalid receipt');
-    receipts.set(id, receipt.requestId); saveReceipts();
+    if (receipt.receiptToken !== undefined && !/^[a-f0-9]{64}$/u.test(receipt.receiptToken)) throw new Error('Invalid report receipt');
+    receipts.set(id, receipt.receiptToken ? { requestId: receipt.requestId, token: receipt.receiptToken } : receipt.requestId);
+    saveReceipts();
     notify(`Заявка получена: ${receipt.requestId}. Исследование ещё не начато.`);
+    if (receipt.receiptToken) await updatePaid(id);
   } catch { notify('План сохранён здесь, но заявка не передана. Повторите отправку на карточке сайта.'); }
   finally { sending.delete(id); render(); }
 }
@@ -53,6 +63,70 @@ function node(tag, text, className) {
 function button(text, callback, className = 'secondary') {
   const item = node('button', text, className); item.type = 'button'; item.addEventListener('click', callback); return item;
 }
+async function updatePaid(id, checkout = false) {
+  const receipt = receipts.get(id);
+  if (!receipt || typeof receipt === 'string' || paidBusy.has(id)) return;
+  paidBusy.add(id);
+  let refresh = false;
+  try {
+    const response = await fetch(`${intakeUrl}/${receipt.requestId}/${checkout ? 'checkout' : 'paid-report'}`, {
+      method: checkout ? 'POST' : 'GET', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
+      headers: { Authorization: `Bearer ${receipt.token}` }
+    });
+    if (!response.ok) throw new Error('Report request rejected');
+    const data = await response.json();
+    if (!Object.hasOwn(paidLabels, data.state)) throw new Error('Invalid report state');
+    if (receipts.get(id) !== receipt) return;
+    if (checkout && data.checkoutUrl) {
+      const destination = new URL(data.checkoutUrl);
+      if (destination.username || destination.password
+        || (destination.protocol !== 'https:' && !(local && destination.origin === location.origin))) {
+        throw new Error('Invalid checkout destination');
+      }
+      location.assign(destination.href);
+      return;
+    }
+    if (checkout) { refresh = true; return; }
+    paidStates.set(id, data);
+  } catch {
+    if (receipts.get(id) === receipt) paidStates.set(id, { error: true });
+  } finally {
+    paidBusy.delete(id); render();
+    if (refresh) void updatePaid(id);
+  }
+}
+function renderPaid(card, id) {
+  const receipt = receipts.get(id);
+  if (!receipt || typeof receipt === 'string') return;
+  const state = paidStates.get(id);
+  card.append(node('h4', local ? 'Полный отчёт · тестовый режим' : 'Полный отчёт'));
+  if (!state || state.error) {
+    card.append(node('p', state?.error ? 'Статус временно недоступен.' : 'Проверяем статус…'),
+      button('Проверить статус отчёта', () => updatePaid(id)));
+    return;
+  }
+  card.append(node('p', paidLabels[state.state], 'paid-report-status'));
+  if (state.state === 'PAYMENT_PENDING' && state.offer) {
+    const currency = new Intl.NumberFormat('ru', { style: 'currency', currency: state.offer.currency });
+    const fractionDigits = currency.resolvedOptions().maximumFractionDigits;
+    card.append(node('p', `${state.offer.scopeLabel} · ${currency.format(state.offer.amountMinor / 10 ** fractionDigits)}`),
+      button(local ? 'Перейти к тестовой оплате' : 'Перейти к оплате', () => updatePaid(id, true)));
+  }
+  if (state.state === 'READY' || state.state === 'LIMITED') {
+    for (const section of state.report?.sections ?? []) {
+      card.append(node('h4', section.title), node('p', section.text));
+      for (const value of section.sourceUrls ?? []) {
+        try {
+          const url = new URL(value);
+          if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) continue;
+          const link = node('a', `Источник: ${url.hostname}`);
+          link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+          card.append(link, document.createElement('br'));
+        } catch { /* A malformed URL is not a report link. */ }
+      }
+    }
+  }
+}
 function nextProjectKey(siteUrl) {
   const host = new URL(siteUrl).hostname.replace(/^www\./, '');
   const base = 'site-' + host.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '').slice(0, 34);
@@ -68,10 +142,12 @@ function render() {
   for (const project of projects.values()) {
     const card = node('article', '', 'card project-card');
     card.append(node('h3', new URL(project.publicSiteUrl).hostname), node('p', project.publicSiteUrl, 'project-url'),
-      node('p', receipts.has(project.profile.projectId)
+      node('p', paidStates.get(project.profile.projectId)?.state ? 'Заявка получена'
+        : receipts.has(project.profile.projectId)
         ? 'Заявка получена · исследование ещё не начато'
         : sending.has(project.profile.projectId) ? 'Передаём заявку…' : 'План готов · заявка не передана', 'project-status'),
       node('p', project.publicProblem));
+    renderPaid(card, project.profile.projectId);
     if (project.desiredOutcome) card.append(node('p', `Заявленная цель: ${project.desiredOutcome}`));
     if (project.repository) card.append(node('p', `Публичный репозиторий (не проверен): ${project.repository}`));
     if (!receipts.has(project.profile.projectId) && !sending.has(project.profile.projectId)) {
@@ -90,6 +166,7 @@ function render() {
     card.append(extra);
     card.append(button('Удалить этот план', () => {
       projects.delete(project.profile.projectId); receipts.delete(project.profile.projectId);
+      paidStates.delete(project.profile.projectId);
       save(); saveReceipts(); render();
     }, 'danger'));
     container.append(card);
@@ -141,13 +218,25 @@ try {
 } catch { projects.clear(); notify('Сохранённые планы не удалось прочитать. Создайте план снова.'); }
 try {
   const raw = localStorage.getItem(receiptKey);
-  if (raw && raw.length > 2048) throw new Error('Storage limit');
+  if (raw && raw.length > 4096) throw new Error('Storage limit');
   const saved = raw ? JSON.parse(raw) : [];
   if (!Array.isArray(saved) || saved.length > 10) throw new Error('Storage format');
   for (const row of saved) {
-    if (!Array.isArray(row) || row.length !== 2 || !projects.has(row[0])
-      || typeof row[1] !== 'string' || !/^[0-9a-f-]{36}$/i.test(row[1])) throw new Error('Receipt format');
-    receipts.set(row[0], row[1]);
+    if (!Array.isArray(row) || row.length !== 2 || !projects.has(row[0])) throw new Error('Receipt format');
+    const value = row[1];
+    if (typeof value === 'string' && /^[0-9a-f-]{36}$/iu.test(value)) receipts.set(row[0], value);
+    else if (value && /^[0-9a-f-]{36}$/iu.test(value.requestId ?? '') && /^[a-f0-9]{64}$/u.test(value.token ?? '')) {
+      receipts.set(row[0], { requestId: value.requestId, token: value.token });
+    } else throw new Error('Receipt format');
   }
 } catch { receipts.clear(); }
 render();
+for (const [id, receipt] of receipts) if (typeof receipt !== 'string') void updatePaid(id);
+setInterval(() => {
+  if (document.hidden) return;
+  for (const [id, state] of paidStates) {
+    if (state.state === 'QUEUED' || state.state === 'RUNNING' || (state.state === 'PAYMENT_PENDING' && state.checkoutStarted)) {
+      void updatePaid(id);
+    }
+  }
+}, 2000);
