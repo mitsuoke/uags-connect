@@ -2,6 +2,7 @@ import { createPublicResearchProject, parsePublicResearchProject, planPublicRese
 
 const storageKey = 'uags.public-projects.v1';
 const receiptKey = 'uags.public-project-receipts.v1';
+const archiveKey = 'uags.public-project-archive.v1';
 const pendingKeyPrefix = 'uags.public-project-pending.v1.';
 const local = ['127.0.0.1', 'localhost'].includes(location.hostname)
   && document.querySelector('meta[name="uags-paid-test"]')?.content === '1';
@@ -12,9 +13,25 @@ const pendingKeys = new Map();
 const sending = new Set();
 const paidStates = new Map();
 const paidBusy = new Set();
+const archivedProjects = new Set();
 const paidLabels = { PAYMENT_PENDING: 'Ожидает оплаты', QUEUED: 'Оплата подтверждена · исследование в очереди',
   RUNNING: 'Исследование выполняется', READY: 'Отчёт готов', LIMITED: 'Отчёт готов частично',
   FAILED: 'Исследование не завершилось. Повторной оплаты не требуется.' };
+const testRefundLabels = {
+  NOT_REQUESTED: 'Тестовый возврат ещё не запрошен. Обратитесь к оператору песочницы.',
+  RECONCILE_REQUIRED: 'Запрос на тестовый возврат требует сверки оператором.',
+  PENDING: 'Тестовый возврат обрабатывается.',
+  SUCCEEDED: 'Тестовый возврат подтверждён.',
+  CANCELED: 'Тестовый возврат отменён. Обратитесь к оператору песочницы.',
+  UNAVAILABLE: 'Статус тестового возврата временно недоступен.'
+};
+const paidFailureLabels = {
+  ORDER_DEADLINE: 'Истёк срок исследования с момента подтверждения оплаты.',
+  CATALOG_UNAVAILABLE: 'Не удалось завершить проверку каталога страниц.',
+  SCOPE_UNAVAILABLE: 'Согласованный объём исследования сейчас недоступен.',
+  ANALYSIS_BUDGET_UNAVAILABLE: 'Не удалось зарезервировать лимит для анализа.',
+  REPORT_UNAVAILABLE: 'Не удалось получить отчёт для этого заказа.'
+};
 const message = document.querySelector('#message');
 function notify(text) { message.textContent = text; }
 function save() {
@@ -24,6 +41,17 @@ function save() {
 function saveReceipts() {
   try { localStorage.setItem(receiptKey, JSON.stringify([...receipts])); }
   catch { notify('Заявка получена, но браузер не сохранил номер для следующего посещения.'); }
+}
+function saveArchive() {
+  try { localStorage.setItem(archiveKey, JSON.stringify([...archivedProjects])); return true; }
+  catch { notify('Настройка видимости действует до закрытия страницы; доступ к заявкам сохранён.'); return false; }
+}
+function setArchived(id, hidden) {
+  if (hidden) archivedProjects.add(id); else archivedProjects.delete(id);
+  const stored = saveArchive();
+  render();
+  if (stored) notify(hidden ? 'План скрыт. Заявка и доступ к отчёту сохранены; план можно восстановить ниже.' : 'План восстановлен.');
+  if (!hidden && typeof receipts.get(id) === 'object') void updatePaid(id);
 }
 function requestKey(id) {
   if (pendingKeys.has(id)) return pendingKeys.get(id);
@@ -95,16 +123,30 @@ function node(tag, text, className) {
 function button(text, callback, className = 'secondary') {
   const item = node('button', text, className); item.type = 'button'; item.addEventListener('click', callback); return item;
 }
-async function updatePaid(id, checkout = false) {
+async function updatePaid(id, checkout = false, acceptedRevision) {
   const receipt = receipts.get(id);
   if (!receipt || typeof receipt === 'string' || paidBusy.has(id)) return;
   paidBusy.add(id);
   let refresh = false;
   try {
+    const revision = checkout && paidStates.get(id)?.offerRevision;
+    if (checkout && (!revision || acceptedRevision !== revision)) {
+      notify('Проверьте текущий объём и условия заказа перед оплатой.');
+      return;
+    }
     const response = await fetch(`${intakeUrl}/${receipt.requestId}/${checkout ? 'checkout' : 'paid-report'}`, {
       method: checkout ? 'POST' : 'GET', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
-      headers: { Authorization: `Bearer ${receipt.token}` }
+      headers: { Authorization: `Bearer ${receipt.token}`, ...(revision ? { 'X-UAGS-Offer-Revision': revision } : {}) }
     });
+    const conflict = checkout && response.status === 409 ? (await response.json()).error : null;
+    if (conflict === 'OFFER_CHANGED' || conflict === 'CHECKOUT_TERMS_UNAVAILABLE') {
+      if (receipts.get(id) === receipt) {
+        paidStates.delete(id);
+        notify(conflict === 'OFFER_CHANGED' ? 'Условия заказа изменились. Проверьте их перед оплатой.' : 'Оплата пока недоступна.');
+        refresh = true;
+      }
+      return;
+    }
     if (!response.ok) throw new Error('Report request rejected');
     const data = await response.json();
     if (!Object.hasOwn(paidLabels, data.state)) throw new Error('Invalid report state');
@@ -144,18 +186,66 @@ function renderPaid(card, id) {
       if (state.preview.report.capturedAt) card.append(node('p', `Проверено: ${new Date(state.preview.report.capturedAt).toLocaleString('ru')}`));
     } else if (state.preview.state === 'LIMITED') card.append(node('p', 'Бесплатная выжимка недоступна для этой заявки.'));
   }
-  const checkoutPaused = state.state === 'PAYMENT_PENDING' && state.checkoutAvailable === false;
+  const terms = typeof state.offer?.terms?.version === 'string' && typeof state.offer?.terms?.remedy === 'string'
+    && state.offer.terms.remedy.trim() ? state.offer.terms : null;
+  const knownPaymentMode = ['TEST', 'LIVE'].includes(state.paymentMode);
+  const checkoutPaused = state.state === 'PAYMENT_PENDING' && (state.checkoutAvailable === false || !terms || !knownPaymentMode);
   card.append(node('p', checkoutPaused ? 'Оплата пока недоступна.' : paidLabels[state.state], 'paid-report-status'));
-  if (state.state === 'PAYMENT_PENDING' && !checkoutPaused && state.offer) {
+  if (state.state === 'FAILED' && Object.hasOwn(paidFailureLabels, state.failureReason)) {
+    card.append(node('p', paidFailureLabels[state.failureReason], 'paid-report-failure'));
+  }
+  const refundState = state.testRefund?.state;
+  if (Object.hasOwn(testRefundLabels, refundState)) {
+    card.append(node('p', testRefundLabels[refundState], 'test-refund-status'));
+    if (['NOT_REQUESTED', 'RECONCILE_REQUIRED', 'PENDING', 'UNAVAILABLE'].includes(refundState)) {
+      card.append(button('Обновить статус возврата', () => updatePaid(id)));
+    }
+  }
+  const canCheckout = state.state === 'PAYMENT_PENDING' && !checkoutPaused && state.offer;
+  const scope = [1, 2, 3].includes(state.offer?.researchScope?.version) ? state.offer.researchScope : null;
+  if (canCheckout || scope) {
     const currency = new Intl.NumberFormat('ru', { style: 'currency', currency: state.offer.currency });
     const fractionDigits = currency.resolvedOptions().maximumFractionDigits;
-    card.append(node('p', `${state.offer.scopeLabel} · ${currency.format(state.offer.amountMinor / 10 ** fractionDigits)}`),
-      button(local ? 'Перейти к тестовой оплате' : 'Перейти к оплате', () => updatePaid(id, true)));
+    card.append(node('p', `${state.offer.scopeLabel} · ${currency.format(state.offer.amountMinor / 10 ** fractionDigits)}`));
+  }
+  if (scope) {
+    const providerLimit = new Intl.NumberFormat('ru', { style: 'currency', currency: 'USD' })
+      .format(scope.maximumProviderCostMicroUsd / 1_000_000);
+    const limits = node('ul', '', 'checkout-scope');
+    for (const text of [
+      `До ${scope.maximumPages} публичных страниц сайта${scope.catalog === 'BATCHED' ? ', проверка по частям' : ''}.`,
+      `До ${scope.maximumMarketQueries} запросов и ${scope.maximumMarketPages} страниц рынка по предложениям, условиям и шагам заказа.`,
+      ...(scope.version === 3 ? [`Подробное сравнение до ${scope.maximumMarketOffers} предложений бизнеса.`] : []),
+      `До ${scope.maximumBrowserPages} страниц в браузере, если они доступны для проверки.`,
+      `До ${scope.maximumJobMinutes} минут с подтверждения оплаты. Расчётный лимит на вызовы провайдера — ${providerLimit}.`
+    ]) limits.append(node('li', text));
+    card.append(node('h4', state.checkoutStarted ? 'Объём заказа' : 'Объём исследования'), limits,
+      node('p', 'Если страницы закрыты или лимит исчерпан, отчёт покажет, что осталось непроверенным.'));
+  }
+  if (terms) {
+    const conditions = node('div', '', 'checkout-terms');
+    conditions.append(node('h4', state.checkoutStarted ? 'Условия вашего заказа' : 'Если отчёт будет неполным'),
+      node('p', terms.remedy));
+    card.append(conditions);
+  }
+  if (canCheckout && /^[a-f0-9]{64}$/u.test(state.offerRevision ?? '')) {
+    card.append(node('p', state.paymentMode === 'TEST' ? 'Тестовый режим оплаты.' : 'Рабочий режим оплаты.'));
+    const accepted = document.createElement('input'); accepted.type = 'checkbox';
+    const choice = node('label', '', 'checkout-terms');
+    choice.append(accepted, document.createTextNode('Я ознакомился с объёмом, ценой и условиями этого заказа.'));
+    const pay = button(state.paymentMode === 'TEST' ? 'Перейти к тестовой оплате' : 'Перейти к оплате', () => {
+      if (!accepted.checked || paidBusy.has(id)) return;
+      pay.disabled = true;
+      void updatePaid(id, true, state.offerRevision);
+    });
+    pay.disabled = true;
+    accepted.addEventListener('change', () => { pay.disabled = !accepted.checked || paidBusy.has(id); });
+    card.append(choice, pay);
   }
   if (state.state === 'READY' || state.state === 'LIMITED') {
     appendReportSections(card, state.report?.sections ?? []);
   }
-  if (typeof state.remedy === 'string' && state.remedy) card.append(node('p', state.remedy));
+  if (!terms && typeof state.remedy === 'string' && state.remedy) card.append(node('p', state.remedy));
 }
 function appendReportSections(card, sections) {
     for (const section of sections) {
@@ -183,7 +273,18 @@ function nextProjectKey(siteUrl) {
 function render() {
   const container = document.querySelector('#projects'); container.replaceChildren();
   document.querySelector('#empty').hidden = projects.size > 0;
+  let archive;
   for (const project of projects.values()) {
+    const id = project.profile.projectId;
+    if (archivedProjects.has(id)) {
+      if (!archive) {
+        archive = document.createElement('details'); archive.className = 'card';
+        archive.append(node('summary', 'Скрытые планы · можно восстановить'));
+      }
+      const row = node('div', '', 'project-card');
+      row.append(node('p', new URL(project.publicSiteUrl).hostname), button('Восстановить план', () => setArchived(id, false)));
+      archive.append(row); continue;
+    }
     const card = node('article', '', 'card project-card');
     card.append(node('h3', new URL(project.publicSiteUrl).hostname), node('p', project.publicSiteUrl, 'project-url'),
       node('p', paidStates.get(project.profile.projectId)?.state ? 'Заявка получена'
@@ -208,15 +309,11 @@ function render() {
     extra.append(button('Сохранить копию настроек', () => download(`${project.projectKey}.project.json`, project)),
       button('Сохранить копию плана', () => download(`${project.projectKey}.plan.json`, plan)));
     card.append(extra);
-    card.append(button('Удалить этот план', () => {
-      projects.delete(project.profile.projectId); receipts.delete(project.profile.projectId);
-      paidStates.delete(project.profile.projectId);
-      pendingKeys.delete(project.profile.projectId);
-      try { localStorage.removeItem(pendingKeyPrefix + project.profile.projectId); } catch { /* Restricted storage. */ }
-      save(); saveReceipts(); render();
-    }, 'danger'));
+    card.append(button('Скрыть план', () => setArchived(id, true)),
+      node('p', 'Скрытие можно отменить. Заявка и доступ к результату останутся в этом браузере.'));
     container.append(card);
   }
+  if (archive) container.append(archive);
 }
 function add(project) {
   if (projects.has(project.profile.projectId)) {
@@ -225,7 +322,7 @@ function add(project) {
   if ([...projects.values()].some(saved => saved.publicSiteUrl === project.publicSiteUrl)) {
     throw new Error('План для этого сайта уже показан справа.');
   }
-  if (projects.size >= 10) throw new Error('В этом браузере можно хранить до 10 планов.');
+  if (projects.size >= 10) throw new Error('В этом браузере можно хранить до 10 планов, включая скрытые.');
   projects.set(project.profile.projectId, project);
   if (save()) notify('План готов и сохранён в этом браузере.');
   render();
@@ -234,6 +331,7 @@ document.querySelector('#project-form').addEventListener('submit', async event =
   event.preventDefault();
   try {
     const fields = Object.fromEntries(new FormData(event.currentTarget));
+    fields.publicProblem = fields.publicProblem.trim().replace(/[?？]$/u, '');
     fields.repository = fields.repository.trim() || null;
     fields.projectKey = fields.projectKey.trim() || nextProjectKey(fields.publicSiteUrl);
     if (!fields.desiredOutcome.trim()) delete fields.desiredOutcome;
@@ -276,11 +374,19 @@ try {
     } else throw new Error('Receipt format');
   }
 } catch { receipts.clear(); }
+try {
+  const raw = localStorage.getItem(archiveKey);
+  if (raw && raw.length > 4096) throw new Error('Archive limit');
+  const saved = raw ? JSON.parse(raw) : [];
+  if (!Array.isArray(saved) || saved.length > 10 || saved.some(id => typeof id !== 'string')) throw new Error('Archive format');
+  for (const id of saved) if (projects.has(id)) archivedProjects.add(id);
+} catch { archivedProjects.clear(); }
 render();
-for (const [id, receipt] of receipts) if (typeof receipt !== 'string') void updatePaid(id);
+for (const [id, receipt] of receipts) if (typeof receipt !== 'string' && !archivedProjects.has(id)) void updatePaid(id);
 setInterval(() => {
   if (document.hidden) return;
   for (const [id, state] of paidStates) {
+    if (archivedProjects.has(id)) continue;
     if (state.state === 'QUEUED' || state.state === 'RUNNING' || (state.state === 'PAYMENT_PENDING' && state.checkoutStarted)
       || ['QUEUED', 'RUNNING'].includes(state.preview?.state)) {
       void updatePaid(id);
