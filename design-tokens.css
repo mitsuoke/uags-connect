@@ -1,0 +1,36 @@
+/* UAGS v1.1. Engineering tokens based on approved raster references.
+   Preserve color roles/positions. Validate contrast in final components. */
+:root {
+  color-scheme: light;
+  --uags-nav-bg: #092344;
+  --uags-nav-bg-bottom: #0C2D52;
+  --uags-nav-text: #F8FBFF;
+  --uags-workspace: #F4F8FE;
+  --uags-surface: #FFFFFF;
+  --uags-text-primary: #092344;
+  --uags-text-secondary: #52657C;
+  --uags-border: #DFE8F4;
+  --uags-primary: #0057E8;
+  --uags-primary-light: #0070FF;
+  --uags-primary-dark: #004DDC;
+  --uags-primary-soft: #E8F1FF;
+  --uags-teal: #10B8B5;
+  --uags-teal-soft: #E0F7F3;
+  --uags-teal-text: #006B70;
+  --uags-orange: #FF9800;
+  --uags-orange-soft: #FFF1DB;
+  --uags-orange-text: #985000;
+  --uags-success-text: #127442;
+  --uags-success-soft: #E6F7EC;
+  --uags-error-text: #B42318;
+  --uags-error-soft: #FEECEB;
+  --uags-sidebar-width: 256px;
+  --uags-topbar-height: 72px;
+  --uags-content-padding: 28px;
+  --uags-card-radius: 16px;
+  --uags-control-radius: 10px;
+  --uags-card-shadow: 0 4px 16px rgba(9, 35, 68, 0.06);
+  --uags-nav-gradient: linear-gradient(180deg, var(--uags-nav-bg), var(--uags-nav-bg-bottom));
+  --uags-active-gradient: linear-gradient(110deg, var(--uags-primary-light), var(--uags-primary-dark));
+}
+/* These variables are not a completed component stylesheet or a new visual concept. */
